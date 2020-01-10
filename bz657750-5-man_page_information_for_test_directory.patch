@@ -1,0 +1,88 @@
+From 8ea8825d34605d300149e2842db89ef94e9851cb Mon Sep 17 00:00:00 2001
+From: Lon Hohberger <lhh@redhat.com>
+Date: Tue, 25 Jan 2011 11:35:22 -0500
+Subject: [PATCH] Man page information for test-directory
+
+Signed-off-by: Lon Hohberger <lhh@redhat.com>
+---
+ watchdog.8      |   34 ++++++++++++++++++++++++++++++++++
+ watchdog.conf.5 |    8 ++++++++
+ 2 files changed, 42 insertions(+), 0 deletions(-)
+
+diff --git a/watchdog.8 b/watchdog.8
+index c5f236b..1f8b61f 100644
+--- a/watchdog.8
++++ b/watchdog.8
+@@ -55,6 +55,8 @@ Do network interfaces receive traffic?
+ Is the temperature too high? (Temperature data not always available.)
+ .IP \(bu 3
+ Execute a user defined command to do arbitrary tests.
++.IP \(bu 3
++Execute one or more test/repair commands found in /etc/watchdog.d.  These commands are called with the argument \fBtest\fP or \fBrepair\fP.
+ .PP
+ If any of these checks fail watchdog will cause a shutdown. Should any of
+ these tests except the user defined binary last longer than one minute the
+@@ -324,6 +326,38 @@ are using the real-time properties since
+ .B watchdog 
+ will wait for
+ the return of this binary before proceeding.
++.SH "TEST DIRECTORY"
++Executables placed in the test directory are discovered by watchdog on 
++startup and are automatically executed.  They are bounded time-wise by
++the test-timeout directive in watchdog.conf.
++
++These executables are called with either "test" as the first argument
++(if a test is being performed) or "repair" as the first argument (if a
++repair for a previously-failed "test" operation on is being performed).
++
++The as with test binaries and repair binaries, expected exit codes for
++a successful test or repair operation is always zero.
++
++If an executable's test operation fails, the same executable is automatically
++called with the "repair" argument as well as the return code of the
++previously-failed test operation.
++
++For example, if the following execution returns 42:
++
++    /etc/watchdog.d/my-test test
++
++The watchdog daemon will attempt to repair the problem by calling:
++
++    /etc/watchdog.d/my-test repair 42
++
++This enables administrators and application developers to make intelligent
++test/repair commands.  If the "repair" operation is not required (or is
++not likely to succeed), it is important that the author of the command
++return a non-zero value so the machine will still reboot as expected.
++
++Note that the watchdog daemon may interpret and act upon any of the reserved
++return codes noted in the Check Binary section prior to calling a given
++command in "repair" mode.
+ .SH BUGS
+ None known so far.
+ .SH AUTHORS
+diff --git a/watchdog.conf.5 b/watchdog.conf.5
+index 7f224a2..d010c2f 100644
+--- a/watchdog.conf.5
++++ b/watchdog.conf.5
+@@ -108,9 +108,17 @@ out.
+ .TP
+ priority = <schedule priority>
+ Set the schedule priority for realtime mode.
++.TP
++test-directory = <test directory>
++Set the directory to run user test/repair scripts.  Default is '/etc/watchdog.d'
++See the Test Directory section in watchdog(8) for more information.
+ .SH FILES
+ .TP
+ .I /etc/watchdog.conf  
+ The watchdog configuration file
++.TP
++.I /etc/watchdog.d
++A directory containing test-or-repair commands. See the Test Directory
++section in watchdog(8) for more information.
+ .SH "SEE ALSO"
+ .BR watchdog (8)
+-- 
+1.7.2.3
+

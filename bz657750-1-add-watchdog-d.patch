@@ -1,0 +1,276 @@
+From 79936735f6224d178b02d1d9432747ef6c9697ea Mon Sep 17 00:00:00 2001
+From: Michael Meskes <meskes@debian.org>
+Date: Fri, 21 Jan 2011 12:21:05 +0100
+Subject: [PATCH 1/4] This patch allows zero or more scripts/programs to be placed
+ in /etc/watchdog.d.  These programs function as both test and
+ repair binaries, and are expected to perform both roles.
+
+ * When called with zero arguments, programs residing in
+   /etc/watchdog.d *MUST* act as a "test-binary", and return
+   a zero result code if the test is successful or non-zero
+   if the test is unsuccessful.
+
+ * When called with one or more arguments, programs residing in
+   /etc/watchdog.d *MUST* either:
+
+   * Return a nonzero result immediately, signifying that the
+     program cannot act as a repair-binary, or
+   * Perform a repair and return a resulting error code to
+     the watchdog daemon.
+
+   The value passed in as $1 (bash) or argv[1] (C) (etc.) is
+   the error code from the failed status check, exactly the
+   same as how existing repair-binaries work today.
+
+ * All entries in /etc/watchdog.d are currently bound by the
+   defined test-timeout directive in watchdog.conf.
+
+This patch does not break compatibility with existing watchdog
+installations or configuration files.
+
+Signed-off-by: Lon Hohberger <lon@users.sourceforge.net>
+---
+ ChangeLog         |    4 +++
+ configure.in      |   14 ++++++++++
+ src/test_binary.c |   23 +++++++++++++---
+ src/watchdog.c    |   74 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 110 insertions(+), 5 deletions(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index bfd4ebe..dfd3096 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -446,3 +446,7 @@ Wed, 25 Feb 2009 10:27:35 +0100
+ 	  binary know more about the failing test.
+ 	- Expanded that patch to work for more tests.
+ 	- Released version 5.5
++
++Fri, 03 Dec 2010 17:36:00 -0400
++
++	- Added /etc/watchdog.d capability.
+diff --git a/configure.in b/configure.in
+index 97ee292..9a8cf7a 100644
+--- a/configure.in
++++ b/configure.in
+@@ -122,6 +122,20 @@ AC_ARG_WITH(linelength,
+   AC_MSG_RESULT(80)
+ ])
+ 
++AC_MSG_CHECKING(for test binary directory)
++AC_ARG_WITH(test-bin-path,
++[  --with-test-bin-path=directory
++			  path to test binaries (default /etc/watchdog.d)],[
++  AC_DEFINE_UNQUOTED(TESTBIN_PATH, "$withval", "path to test binaries")
++  TESTBIN_PATH="$withval"
++  AC_MSG_RESULT($withval)
++],[
++  TESTBIN_PATH="/etc/watchdog.d"
++  AC_DEFINE_UNQUOTED(TESTBIN_PATH, "$TESTBIN_PATH", "path to test binaries")
++  AC_MSG_RESULT($TESTBIN_PATH)
++])
++AC_SUBST(TESTBIN_PATH)
++
+ AC_MSG_CHECKING(for pid filename)
+ AC_ARG_WITH(pidfile,
+ [  --with-pidfile=filename name of pid file (default /var/run/watchdog.pid)],[
+diff --git a/src/test_binary.c b/src/test_binary.c
+index ab62343..b139182 100644
+--- a/src/test_binary.c
++++ b/src/test_binary.c
+@@ -9,6 +9,7 @@
+ #include <stdlib.h>
+ #include <sys/wait.h>
+ #include <time.h>
++#include <linux/limits.h>
+ 
+ #include "extern.h"
+ #include "watch_err.h"
+@@ -19,6 +20,7 @@
+ 
+ struct process
+ {
++    char proc_name[PATH_MAX];
+     pid_t pid;
+     time_t time;
+     struct process *next;
+@@ -26,9 +28,11 @@ struct process
+ 
+ static struct process *process_head = NULL;
+ 
+-static void add_process (pid_t pid)
++static void add_process (const char *name, pid_t pid)
+ {
+     struct process *node = (struct process *) malloc (sizeof (struct process));
++
++    snprintf(node->proc_name, sizeof(node->proc_name), "%s", name);
+     node->pid = pid;
+     node->time = time (NULL);
+     node->next = process_head;
+@@ -54,14 +58,20 @@ static void remove_process (pid_t pid)
+ }
+ 
+ /* See if any test processes have exceeded the timeout */
+-static int check_processes (time_t timeout)
++static int check_processes (const char *name, time_t timeout)
+ {
+     struct process *current;
+     time_t now = time (NULL);
+     
+     current = process_head;
+     while (current != NULL) {
++<<<<<<< HEAD
+         if (now - current->time > timeout)
++=======
++        if (!strcmp(current->proc_name, name) &&
++	      now - current->time > timeout) {
++            remove_process (current->pid);
++>>>>>>> 0fc6d00... This patch allows zero or more scripts/programs to be placed
+             return (ETOOLONG);
+         current = current->next;
+     }
+@@ -74,8 +84,11 @@ int check_bin(char *tbinary, time_t timeout)
+     pid_t child_pid;
+     int result, res = 0;
+ 
++    if (tbinary == NULL)
++        return ENOERR;
++
+     if (timeout > 0)
+-	    res = check_processes(timeout);
++	    res = check_processes(tbinary, timeout);
+     if (res == ETOOLONG) {
+ #if USE_SYSLOG
+         syslog(LOG_ERR, "test-binary %s exceeded time limit %ld", tbinary, timeout);
+@@ -120,14 +133,14 @@ int check_bin(char *tbinary, time_t timeout)
+ 	int ret, err;
+ 
+ 	/* fork was okay, add child to process list */
+-	add_process(child_pid);
++	add_process(tbinary, child_pid);
+ 
+ 	/* wait for child(s) to stop */
+ 	/* but only after a short sleep */
+ 	sleep(tint >> 1);
+ 
+ 	do {
+-	    ret = waitpid(-1, &result, WNOHANG);
++	    ret = waitpid(child_pid, &result, WNOHANG);
+ 	    err = errno;
+         if (ret > 0)
+             remove_process(ret);
+diff --git a/src/watchdog.c b/src/watchdog.c
+index bf60b19..54cfb5f 100644
+--- a/src/watchdog.c
++++ b/src/watchdog.c
+@@ -31,6 +31,8 @@
+ #if !defined(__GLIBC__)		/* __GLIBC__ */
+ extern char *basename(const char *);
+ #endif				/* __GLIBC__ */
++#include <libgen.h>
++#include <dirent.h>
+ 
+ #include <unistd.h>
+ 
+@@ -203,6 +205,17 @@ static void do_check(int res, char *rbinary, char *name)
+     wd_action(keep_alive(), rbinary, NULL);
+ }
+ 
++#ifdef TESTBIN_PATH
++static void do_check2(int res, char *r_specific, char *r_global, char *name)
++{
++    wd_action(res, r_specific, name);
++    wd_action(keep_alive(), r_global, NULL);
++}
++
++/* Self-repairing binaries list */
++struct list *tr_bin = NULL;
++#endif
++
+ struct list *file = NULL, *target = NULL, *pidfile = NULL, *iface = NULL;
+ char *tbinary, *rbinary, *admin;
+ 
+@@ -422,6 +435,58 @@ static void read_config(char *filename, char *progname)
+     }
+ }
+ 
++#ifdef TESTBIN_PATH
++static void add_test_binaries(const char *path)
++{
++    DIR *d;
++    struct dirent dentry;
++    struct dirent *rdret;
++    struct stat sb;
++    int ret;
++    char fname[PATH_MAX];
++    char *fdup;
++
++    ret = stat(path, &sb);
++    if (ret < 0)
++	return;
++    if (!S_ISDIR(sb.st_mode))
++	return;
++
++    d = opendir(path);
++    if (!d)
++	return;
++    do {
++	ret = readdir_r(d, &dentry, &rdret);
++	if (ret)
++	    break;
++	if (rdret == NULL)
++	    break;
++
++	ret = snprintf(fname, sizeof(fname), "%s/%s",
++		       path, dentry.d_name);
++	if (ret >= sizeof(fname))
++	    continue;
++	ret = stat(fname, &sb);
++	if (ret < 0)
++	    continue;
++	if (!S_ISREG(sb.st_mode))
++	    continue;
++	if (!(sb.st_mode & S_IXUSR))
++	    continue;
++	if (!(sb.st_mode & S_IRUSR))
++	    continue;
++
++	fdup = strdup(fname);
++	if (!fdup)
++	    continue;
++
++	syslog(LOG_DEBUG, "adding %s to list of auto-repair binaries",
++	       fdup);
++	add_list(&tr_bin, fdup);
++    } while (1);
++}
++#endif
++
+ static void old_option(int c, char *filename)
+ {
+     fprintf(stderr, "Option -%c is no longer valid, please specify it in %s.\n", c, filename);
+@@ -509,6 +574,9 @@ int main(int argc, char *const argv[])
+     }
+ 
+     read_config(filename, progname);
++#ifdef TESTBIN_PATH
++    add_test_binaries(TESTBIN_PATH);
++#endif
+ 
+     if (tint < 0)
+ 	usage();
+@@ -837,6 +905,12 @@ int main(int argc, char *const argv[])
+ 	/* in user mode execute the given binary or just test fork() call */
+ 	do_check(check_bin(tbinary, timeout), rbinary, NULL);
+ 
++#ifdef TESTBIN_PATH
++	/* test/repair binaries in the watchdog.d directory */
++	for (act = tr_bin; act != NULL; act = act->next)
++	    do_check2(check_bin(act->name, timeout), act->name, rbinary, NULL);
++#endif
++
+ 	/* finally sleep some seconds */
+ 	sleep((tint >> 1) + (tint % 2)); /* this should make watchdog sleep tint seconds alltogther */
+ 	/* sleep(tint); */
+-- 
+1.7.2.3
+

@@ -1,0 +1,111 @@
+From 052114556b7fda3241855bd211e09157b94d96c0 Mon Sep 17 00:00:00 2001
+From: Michael Meskes <meskes@debian.org>
+Date: Fri, 21 Jan 2011 12:24:30 +0100
+Subject: [PATCH 3/4] Add test-directory to configuration file
+
+Signed-off-by: Lon Hohberger <lon@users.sourceforge.net>
+---
+ src/watchdog.c |   24 ++++++++++++++++--------
+ 1 files changed, 16 insertions(+), 8 deletions(-)
+
+diff --git a/src/watchdog.c b/src/watchdog.c
+index 24a24f6..24b921b 100644
+--- a/src/watchdog.c
++++ b/src/watchdog.c
+@@ -71,6 +71,11 @@ int verbose = FALSE;
+ #define TESTTIMEOUT	"test-timeout"
+ #define HEARTBEAT	"heartbeat-file"
+ #define HBSTAMPS	"heartbeat-stamps"
++#define TESTDIR		"test-directory"
++
++#ifndef TESTBIN_PATH
++#define TESTBIN_PATH NULL
++#endif
+ 
+ pid_t pid;
+ int softboot = FALSE, watchdog = -1, load = -1, mem = -1, temp = -1;
+@@ -212,7 +217,6 @@ static void do_check(int res, char *rbinary, char *name)
+     wd_action(keep_alive(), rbinary, NULL, 0);
+ }
+ 
+-#ifdef TESTBIN_PATH
+ static void do_check2(int res, char *r_specific, char *r_global, char *name)
+ {
+     wd_action(res, r_specific, name, 1);
+@@ -221,7 +225,7 @@ static void do_check2(int res, char *r_specific, char *r_global, char *name)
+ 
+ /* Self-repairing binaries list */
+ struct list *tr_bin = NULL;
+-#endif
++char *test_dir = TESTBIN_PATH;
+ 
+ struct list *file = NULL, *target = NULL, *pidfile = NULL, *iface = NULL;
+ char *tbinary, *rbinary, *admin;
+@@ -430,6 +434,11 @@ static void read_config(char *filename, char *progname)
+ 		else {
+ 			minpages = atol(line + i);
+ 		}
++	    } else if (strncmp(line + i, TESTDIR, strlen(TESTDIR)) == 0) {
++		if (spool(line, &i, strlen(TESTDIR)))
++			fprintf(stderr, "Ignoring invalid line in config file: %s ", line);
++		else
++			test_dir = strdup(line + i);
+ 	    } else {
+ 		fprintf(stderr, "Ignoring invalid line in config file:\n%s\n", line);
+ 	    }
+@@ -442,7 +451,6 @@ static void read_config(char *filename, char *progname)
+     }
+ }
+ 
+-#ifdef TESTBIN_PATH
+ static void add_test_binaries(const char *path)
+ {
+     DIR *d;
+@@ -453,6 +461,8 @@ static void add_test_binaries(const char *path)
+     char fname[PATH_MAX];
+     char *fdup;
+ 
++    if (!path)
++	return;
+     ret = stat(path, &sb);
+     if (ret < 0)
+ 	return;
+@@ -492,7 +502,6 @@ static void add_test_binaries(const char *path)
+ 	add_list(&tr_bin, fdup);
+     } while (1);
+ }
+-#endif
+ 
+ static void old_option(int c, char *filename)
+ {
+@@ -581,9 +590,7 @@ int main(int argc, char *const argv[])
+     }
+ 
+     read_config(filename, progname);
+-#ifdef TESTBIN_PATH
+-    add_test_binaries(TESTBIN_PATH);
+-#endif
++    add_test_binaries(test_dir);
+ 
+     if (tint < 0)
+ 	usage();
+@@ -876,7 +883,7 @@ int main(int argc, char *const argv[])
+ 
+     /* main loop: update after <tint> seconds */
+     while (1) {
+-	wd_action(keep_alive(), rbinary, NULL);
++	wd_action(keep_alive(), rbinary, NULL, 0);
+ 
+ 	/* sync system if we have to */
+ 	do_check(sync_system(sync_it), rbinary, NULL);
+@@ -915,6 +922,7 @@ int main(int argc, char *const argv[])
+ #ifdef TESTBIN_PATH
+ 	/* test/repair binaries in the watchdog.d directory */
+ 	for (act = tr_bin; act != NULL; act = act->next)
++		/* Use version 1 for testbin-path */
+ 	    do_check2(check_bin(act->name, timeout, 1), act->name, rbinary, NULL);
+ #endif
+ 
+-- 
+1.7.2.3
+
