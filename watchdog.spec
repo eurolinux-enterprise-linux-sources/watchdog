@@ -1,7 +1,7 @@
 Summary:          Software and/or Hardware watchdog daemon
 Name:             watchdog
 Version:          5.6
-Release:          4%{?dist}
+Release:          5%{?dist}
 License:          GPL+
 Group:            System Environment/Daemons
 
@@ -125,6 +125,10 @@ fi
 
 
 %changelog
+* Thu Oct 22 2015 Tomas Smetana <tsmetana@redhat.com> - 5.6-5
+- Fix initscript: suppress unnecessary [OK]
+- Resolves: rhbz#1263040
+
 * Mon Oct 13 2014 Ales Ledvinka <aledvink@redhat.com> - 5.6-4
 - With no value provided for watchdog-timeout do not attempt
   to set it. Avoid conflict with custom module parameter.

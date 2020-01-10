@@ -39,10 +39,10 @@ start() {
 	    daemon /usr/sbin/${prog}
         fi
 	RETVAL=$?
-	echo
 	[ $RETVAL -eq 0 ] && touch $lockfile
 	[ $RETVAL -eq 0 ] && echo_success
 	[ $RETVAL -ne 0 ] && echo_failure
+	echo
 	return $RETVAL
 }
 
