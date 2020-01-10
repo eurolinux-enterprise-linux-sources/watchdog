@@ -1,0 +1,39 @@
+diff -up ./src/watchdog.c.bz ./src/watchdog.c
+--- ./src/watchdog.c.bz	2014-10-13 06:40:52.951000000 +0200
++++ ./src/watchdog.c	2014-10-13 07:02:26.980000000 +0200
+@@ -87,7 +87,8 @@ int tint = 10, logtick = 1, ticker = 1,
+ int maxload1 = 0, maxload5 = 0, maxload15 = 0, minpages = 0;
+ int maxtemp = 120, hbstamps = 300, lastts, nrts;
+ int pingcount = 3;
+-int devtimeout = TIMER_MARGIN;
++int devtimeout = 0;
++int margin = TIMER_MARGIN;
+ char *tempname = NULL, *devname = NULL, *admin = "root", *progname;
+ char *timestamps, *heartbeat;
+ time_t timeout = 0;
+@@ -189,9 +190,13 @@ static int repair(char *rbinary, int res
+ 	syslog(LOG_ERR, "repair binary %s returned %d", rbinary, ret);
+ #endif				/* USE_SYSLOG */
+ 
+-	if (ret == ERESET) /* repair script says force hard reset, we give it a try */
+-		sleep(devtimeout * 4);
+-	
++	if (ret == ERESET) { /* repair script says force hard reset, we give it a try */
++		if (devtimeout == 0) {
++			sleep(margin * 4);
++		} else {
++			sleep(devtimeout * 4);
++		}
++	}
+ 	/* for all other errors or if we still live, we let shutdown handle it */
+ 	return (ret);
+     }
+@@ -605,7 +610,7 @@ int main(int argc, char *const argv[])
+     if (tint < 0)
+ 	usage();
+ 
+-    if (tint >= devtimeout && !force) {
++    if (devtimeout != 0 && tint >= devtimeout && !force) {
+ 	fprintf(stderr, "%s error:\n", progname);
+ 	fprintf(stderr, "This interval length might reboot the system while the process sleeps!\n");
+ 	fprintf(stderr, "To force this interval length use the -f option.\n");

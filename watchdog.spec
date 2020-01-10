@@ -1,7 +1,7 @@
 Summary:          Software and/or Hardware watchdog daemon
 Name:             watchdog
 Version:          5.6
-Release:          2%{?dist}
+Release:          4%{?dist}
 License:          GPL+
 Group:            System Environment/Daemons
 
@@ -16,6 +16,7 @@ Patch2:           bz657750-2-script-handling.patch
 Patch3:           bz657750-3-add_test_directory_to_configuration_file.patch
 Patch4:           bz657750-4-Log-binary-names.patch
 Patch5:           bz657750-5-man_page_information_for_test_directory.patch
+Patch6:           bz1099604-default_timeout.patch
 
 BuildRoot:        %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
@@ -59,6 +60,7 @@ mv README.Fedora README.RHEL
 %patch3 -p1 -b .bz657750-3-add_test_directory_to_configuration_file
 %patch4 -p1 -b .bz657750-4-Log-binary-names
 %patch5 -p1 -b .bz657750-5-man_page_information_for_test_directory
+%patch6 -p1 -b -bz1099604-default_timeout
 
 mv README README.orig
 iconv -f ISO-8859-1 -t UTF-8 < README.orig > README
@@ -123,6 +125,11 @@ fi
 
 
 %changelog
+* Mon Oct 13 2014 Ales Ledvinka <aledvink@redhat.com> - 5.6-4
+- With no value provided for watchdog-timeout do not attempt
+  to set it. Avoid conflict with custom module parameter.
+- Resolves: rhbz#1099604
+
 * Thu Aug  8 2013 Richard W.M. Jones <rjones@redhat.com> - 5.6-2
 - Rename README.Fedora to README.RHEL on RHEL.
 
