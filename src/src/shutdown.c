@@ -4,6 +4,9 @@
 #include "config.h"
 #endif
 
+#define _XOPEN_SOURCE 500      /* for getsid(2) */
+#define _BSD_SOURCE            /* for acct(2) */
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -18,6 +21,10 @@
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <time.h>
+#include <rpc/types.h>         /* for caddr_t */
 
 #include "watch_err.h"
 #include "extern.h"
@@ -51,6 +58,8 @@ static struct mntent rootfs;
 #if defined(_POSIX_MEMLOCK)
 extern int mlocked, realtime;
 #endif /* _POSIX_MEMLOCK */
+extern volatile sig_atomic_t _running;
+extern int devtimeout; /* From watchdog.c */
 
 jmp_buf ret2dog;
 
@@ -78,7 +87,7 @@ static void log_end()
 static void close_all()
 {
     if (watchdog != -1) {
-        if ( write(watchdog, "V", 1) < 0 ) {
+        if (write(watchdog, "V", 1) < 0 ) {
 		int err = errno;
 #if USE_SYSLOG
 		syslog(LOG_ERR, "write watchdog device gave error %d = '%m'!", err);
@@ -129,8 +138,15 @@ static void close_all()
     }
 }
 
+
+void sigterm_handler(int arg)
+{
+    _running = 0;
+}
+
+
 /* on exit we close the device and log that we stop */
-void terminate(int arg)
+void terminate(void)
 {
 #if defined(_POSIX_MEMLOCK)
     if (realtime == TRUE && mlocked == TRUE)
@@ -157,10 +173,10 @@ static void panic(void)
 {
     /* if we are still alive, we just exit */
     close_all();
-    fprintf(stderr, "WATCHDOG PANIC: Still alive after sleeping %d seconds!\n", 4 * TIMER_MARGIN);
+    fprintf(stderr, "WATCHDOG PANIC: Still alive after sleeping %d seconds!\n", 4 * devtimeout);
 #if USE_SYSLOG
     openlog(progname, LOG_PID, LOG_DAEMON);
-    syslog(LOG_ALERT, "still alive after sleeping %d seconds", 4 * TIMER_MARGIN);
+    syslog(LOG_ALERT, "still alive after sleeping %d seconds", 4 * devtimeout);
     closelog();
 #endif
     exit(1);
@@ -323,8 +339,8 @@ void do_shutdown(int errorcode)
     char *seedbck = RANDOM_SEED;
 
     /* soft-boot the system */
-    /* first close the open files */
-    close_all();
+    /* do not close open files here, they will be closed later anyway */
+    /* close_all(); */
 
     /* if we will halt the system we should try to tell a sysadmin */
     if (admin != NULL) {
@@ -338,7 +354,7 @@ void do_shutdown(int errorcode)
 	 * We cannot let the shell check, because a non-existant or
 	 * non-executable sendmail binary means that the pipe is closed faster
 	 * than we can write to it. */
-	if ((stat(PATH_SENDMAIL, &buf) != 0) || (buf.st_mode&S_IXUSR == 0))
+	if ((stat(PATH_SENDMAIL, &buf) != 0) || ((buf.st_mode&S_IXUSR) == 0))
 #if USE_SYSLOG
 		syslog(LOG_ERR, "%s does not exist or is not executable (errno = %d)", PATH_SENDMAIL, errno);
 #endif				/* USE_SYSLOG */
@@ -399,19 +415,22 @@ void do_shutdown(int errorcode)
     closelog();
 #endif				/* USE_SYSLOG */
 
+    keep_alive();
     sleep(10);			/* make sure log is written and mail is send */
+    keep_alive();
 
     /* We cannot start shutdown, since init might not be able to fork. */
     /* That would stop the reboot process. So we try rebooting the system */
     /* ourselves. Note, that it is very likely we cannot start any rc */
     /* script either, so we do it all here. */
 
-    /* Start with closing the files. */
+    /* Close all files except the watchdog device. */
     for (i = 0; i < 3; i++)
 	if (!isatty(i))
 	    close(i);
     for (i = 3; i < 20; i++)
-	close(i);
+	if (i != watchdog)
+		close(i);
     close(255);
 
     /* Ignore all signals. */
@@ -425,6 +444,7 @@ void do_shutdown(int errorcode)
     (void) killall5(SIGTERM);
     sleep(5);
     (void) killall5(SIGKILL);
+    keep_alive();
 
     /* Record the fact that we're going down */
     if ((fd = open(_PATH_WTMP, O_WRONLY | O_APPEND)) >= 0) {
@@ -464,6 +484,8 @@ void do_shutdown(int errorcode)
     /* Turn off accounting */
     if (acct(NULL) < 0)
 	perror(progname);
+
+    keep_alive();
 
     /* Turn off quota and swap */
     mnt_off();
@@ -510,13 +532,7 @@ void do_shutdown(int errorcode)
     /* okay we should never reach this point, */
     /* but if we do we will cause the hard reset */
 
-    /* open the device again */
-    /* don't check for error, it won't help anyway here */
-    if (devname != NULL) {
-	open(devname, O_WRONLY);
-
-	sleep(TIMER_MARGIN * 4);
-    }
+    sleep(devtimeout * 4);
 
     /* unbelievable: we're still alive */
     panic();

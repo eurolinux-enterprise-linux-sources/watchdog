@@ -44,6 +44,7 @@
 
 int watchdog = -1, tint = 10, schedprio = 1;
 char *devname = NULL, *progname = NULL;
+volatile sig_atomic_t _running = 1;
 
 #if defined(_POSIX_MEMLOCK)
 int mlocked = FALSE, realtime = FALSE;
@@ -74,7 +75,7 @@ static void log_end()
 static void close_all()
 {
 	if (watchdog != -1) {
-		if ( write(watchdog, "V", 1) < 0 ) {
+		if (write(watchdog, "V", 1) < 0 ) {
 			int err = errno;
 #if USE_SYSLOG
 	                syslog(LOG_ERR, "write watchdog device gave error %d = '%m'!", err);
@@ -92,8 +93,12 @@ static void close_all()
         }
 }
 
+void sigterm_handler(int arg) {
+    _running = 0;
+}
+
 /* on exit we close the device and log that we stop */
-void terminate(int arg) {
+void terminate(void) {
 #if defined(_POSIX_MEMLOCK)
     if ( realtime == TRUE && mlocked == TRUE ) {
         /* unlock all locked pages */
@@ -184,7 +189,12 @@ static void read_config(char *filename, char *progname)
 		        schedprio = atol(line + i);
 	    } 
             else {
-                fprintf(stderr, "Ignoring config line: %s\n", line);
+                /*
+		 * do not print an error message here because we usually use
+		 * watchdog's config file which may contain far more valid
+		 * options than we understand 
+		 */
+		/* fprintf(stderr, "Ignoring config line: %s\n", line); */
             }
         }
     }
@@ -204,12 +214,31 @@ int main(int argc, char *const argv[])
     pid_t child_pid;
     int count = 0;
     int c;
-    char *opts = "c:";
+    /* allow all options watchdog understands too */
+#if USE_SYSLOG
+    char *opts = "d:i:n:fsvbql:p:t:c:r:m:a:";
     struct option long_options[] =
     {
-        {"config-file", required_argument, NULL, 'c'},
+	{"config-file", required_argument, NULL, 'c'},
+	{"force", no_argument, NULL, 'f'},
+	{"sync", no_argument, NULL, 's'},
+	{"no-action", no_argument, NULL, 'q'},
+	{"verbose", no_argument, NULL, 'v'},
+	{"softboot", no_argument, NULL, 'b'},
 	{NULL, 0, NULL, 0}
     };
+#else				/* USE_SYSLOG */
+    char *opts = "d:i:n:fsbql:p:t:c:r:m:a:";
+    struct option long_options[] =
+    {
+	{"config-file", required_argument, NULL, 'c'},
+	{"force", no_argument, NULL, 'f'},
+	{"sync", no_argument, NULL, 's'},
+	{"no-action", no_argument, NULL, 'q'},
+	{"softboot", no_argument, NULL, 'b'},
+	{NULL, 0, NULL, 0}
+    };
+#endif				/* USE_SYSLOG */
 
     progname = basename(argv[0]);
 
@@ -217,11 +246,30 @@ int main(int argc, char *const argv[])
     while ((c = getopt_long(argc, argv, opts, long_options, NULL)) != EOF) {
 	if (c == -1)
 	    break;
-	
-	if (c == 'c')
+	switch (c) {
+	case 'c':
 	    filename = optarg;
-	else
+	    break;
+	case 'n':
+	case 'p':
+	case 'a':
+	case 'r':
+	case 'd':
+	case 't':
+	case 'l':
+	case 'm':
+	case 'i':
+	case 'f':
+	case 's':
+	case 'b':
+	case 'q':
+#if USE_SYSLOG
+	case 'v':
+#endif				/* USE_SYSLOG */
+	     break;
+	default:
 	    usage();
+	}
     }
 
     read_config(filename, progname);
@@ -279,7 +327,7 @@ int main(int argc, char *const argv[])
     /* this daemon has no other function than writing to this device 
      * i.e. if there is no device given we better punt */
     if ( devname == NULL )
-	terminate(0);
+	terminate();
 
     /* open the device */
     watchdog = open(devname, O_WRONLY);
@@ -300,9 +348,9 @@ int main(int argc, char *const argv[])
         (void) fclose(fp);
     }
 
-    /* set signal term to call terminate() */
+    /* set signal term to call sigterm_handler() */
     /* to make sure watchdog device is closed */
-    signal(SIGTERM, terminate);
+    signal(SIGTERM, sigterm_handler);
 
 #if defined(_POSIX_MEMLOCK)
     if ( realtime == TRUE ) {
@@ -334,7 +382,7 @@ int main(int argc, char *const argv[])
 #endif
 
     /* main loop: update after <tint> seconds */
-    while ( 1 ) {
+    while ( _running ) {
         if ( write(watchdog, "\0", 1) < 0 ) {
             int err = errno;
 #if USE_SYSLOG
@@ -349,6 +397,9 @@ int main(int argc, char *const argv[])
 
         count++;
     }
+
+    terminate();
+    /* not reached */
 }
 
 

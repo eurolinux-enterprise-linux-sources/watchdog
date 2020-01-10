@@ -446,3 +446,30 @@ Wed, 25 Feb 2009 10:27:35 +0100
 	  binary know more about the failing test.
 	- Expanded that patch to work for more tests.
 	- Released version 5.5
+
+Tue,  3 Mar 2009 14:59:55 +0100
+
+	- Added patch by Enrique Zanardi <ezanardi@atlantux.com> to
+	  check for the source of the ping reply packets.
+
+Thu, 12 Mar 2009 14:36:01 +0100
+
+	- Added patch by Lon Hohberger <lhh@redhat.com> to allow configuration
+	  of timeouts.
+	- Added another patch by Lon Hohberger <lhh@redhat.com> to make sure
+	  signal handler does not call not-signal safe functions.
+	- Made wd_keepalive accept all options watchdog accepts and not throw
+	  errors on those it does not use itself.
+
+Fri, 13 Mar 2009 12:26:40 +0100
+
+	- Made watchdog not close the watchdog device so early when trying a
+	  normal shutdown. This ensures a reset even if the system hangs while
+	  doing this.
+	- Applied patch by Richard W.M. Jones <rjones@redhat.com> to cleanup
+	  code base for gcc-4.4.
+
+Sun, 22 Mar 2009 14:33:21 +0100
+
+	- Some more bugfixes by me and Lon.
+	- Released 5.6

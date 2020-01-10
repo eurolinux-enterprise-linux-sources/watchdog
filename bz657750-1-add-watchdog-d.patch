@@ -1,58 +1,21 @@
-From 79936735f6224d178b02d1d9432747ef6c9697ea Mon Sep 17 00:00:00 2001
-From: Michael Meskes <meskes@debian.org>
-Date: Fri, 21 Jan 2011 12:21:05 +0100
-Subject: [PATCH 1/4] This patch allows zero or more scripts/programs to be placed
- in /etc/watchdog.d.  These programs function as both test and
- repair binaries, and are expected to perform both roles.
-
- * When called with zero arguments, programs residing in
-   /etc/watchdog.d *MUST* act as a "test-binary", and return
-   a zero result code if the test is successful or non-zero
-   if the test is unsuccessful.
-
- * When called with one or more arguments, programs residing in
-   /etc/watchdog.d *MUST* either:
-
-   * Return a nonzero result immediately, signifying that the
-     program cannot act as a repair-binary, or
-   * Perform a repair and return a resulting error code to
-     the watchdog daemon.
-
-   The value passed in as $1 (bash) or argv[1] (C) (etc.) is
-   the error code from the failed status check, exactly the
-   same as how existing repair-binaries work today.
-
- * All entries in /etc/watchdog.d are currently bound by the
-   defined test-timeout directive in watchdog.conf.
-
-This patch does not break compatibility with existing watchdog
-installations or configuration files.
-
-Signed-off-by: Lon Hohberger <lon@users.sourceforge.net>
----
- ChangeLog         |    4 +++
- configure.in      |   14 ++++++++++
- src/test_binary.c |   23 +++++++++++++---
- src/watchdog.c    |   74 +++++++++++++++++++++++++++++++++++++++++++++++++++++
- 4 files changed, 110 insertions(+), 5 deletions(-)
-
-diff --git a/ChangeLog b/ChangeLog
-index bfd4ebe..dfd3096 100644
---- a/ChangeLog
-+++ b/ChangeLog
-@@ -446,3 +446,7 @@ Wed, 25 Feb 2009 10:27:35 +0100
- 	  binary know more about the failing test.
+diff -ur watchdog-5.6.orig/ChangeLog watchdog-5.6/ChangeLog
+--- watchdog-5.6.orig/ChangeLog	2009-03-22 13:33:38.000000000 +0000
++++ watchdog-5.6/ChangeLog	2013-08-06 16:06:31.592256107 +0100
+@@ -447,6 +447,10 @@
  	- Expanded that patch to work for more tests.
  	- Released version 5.5
-+
+ 
 +Fri, 03 Dec 2010 17:36:00 -0400
 +
 +	- Added /etc/watchdog.d capability.
-diff --git a/configure.in b/configure.in
-index 97ee292..9a8cf7a 100644
---- a/configure.in
-+++ b/configure.in
-@@ -122,6 +122,20 @@ AC_ARG_WITH(linelength,
++
+ Tue,  3 Mar 2009 14:59:55 +0100
+ 
+ 	- Added patch by Enrique Zanardi <ezanardi@atlantux.com> to
+diff -ur watchdog-5.6.orig/configure.in watchdog-5.6/configure.in
+--- watchdog-5.6.orig/configure.in	2009-03-12 14:42:25.000000000 +0000
++++ watchdog-5.6/configure.in	2013-08-06 16:06:02.412250315 +0100
+@@ -122,6 +122,20 @@
    AC_MSG_RESULT(80)
  ])
  
@@ -73,10 +36,9 @@ index 97ee292..9a8cf7a 100644
  AC_MSG_CHECKING(for pid filename)
  AC_ARG_WITH(pidfile,
  [  --with-pidfile=filename name of pid file (default /var/run/watchdog.pid)],[
-diff --git a/src/test_binary.c b/src/test_binary.c
-index ab62343..b139182 100644
---- a/src/test_binary.c
-+++ b/src/test_binary.c
+diff -ur watchdog-5.6.orig/src/test_binary.c watchdog-5.6/src/test_binary.c
+--- watchdog-5.6.orig/src/test_binary.c	2009-03-13 12:49:58.000000000 +0000
++++ watchdog-5.6/src/test_binary.c	2013-08-06 16:06:02.414250491 +0100
 @@ -9,6 +9,7 @@
  #include <stdlib.h>
  #include <sys/wait.h>
@@ -93,7 +55,7 @@ index ab62343..b139182 100644
      pid_t pid;
      time_t time;
      struct process *next;
-@@ -26,9 +28,11 @@ struct process
+@@ -26,9 +28,11 @@
  
  static struct process *process_head = NULL;
  
@@ -106,7 +68,7 @@ index ab62343..b139182 100644
      node->pid = pid;
      node->time = time (NULL);
      node->next = process_head;
-@@ -54,14 +58,20 @@ static void remove_process (pid_t pid)
+@@ -54,14 +58,20 @@
  }
  
  /* See if any test processes have exceeded the timeout */
@@ -128,7 +90,7 @@ index ab62343..b139182 100644
              return (ETOOLONG);
          current = current->next;
      }
-@@ -74,8 +84,11 @@ int check_bin(char *tbinary, time_t timeout)
+@@ -74,8 +84,11 @@
      pid_t child_pid;
      int result, res = 0;
  
@@ -141,7 +103,7 @@ index ab62343..b139182 100644
      if (res == ETOOLONG) {
  #if USE_SYSLOG
          syslog(LOG_ERR, "test-binary %s exceeded time limit %ld", tbinary, timeout);
-@@ -120,14 +133,14 @@ int check_bin(char *tbinary, time_t timeout)
+@@ -120,14 +133,14 @@
  	int ret, err;
  
  	/* fork was okay, add child to process list */
@@ -158,11 +120,10 @@ index ab62343..b139182 100644
  	    err = errno;
          if (ret > 0)
              remove_process(ret);
-diff --git a/src/watchdog.c b/src/watchdog.c
-index bf60b19..54cfb5f 100644
---- a/src/watchdog.c
-+++ b/src/watchdog.c
-@@ -31,6 +31,8 @@
+diff -ur watchdog-5.6.orig/src/watchdog.c watchdog-5.6/src/watchdog.c
+--- watchdog-5.6.orig/src/watchdog.c	2009-03-22 12:52:24.000000000 +0000
++++ watchdog-5.6/src/watchdog.c	2013-08-06 16:06:02.416250662 +0100
+@@ -32,6 +32,8 @@
  #if !defined(__GLIBC__)		/* __GLIBC__ */
  extern char *basename(const char *);
  #endif				/* __GLIBC__ */
@@ -171,7 +132,7 @@ index bf60b19..54cfb5f 100644
  
  #include <unistd.h>
  
-@@ -203,6 +205,17 @@ static void do_check(int res, char *rbinary, char *name)
+@@ -208,6 +210,17 @@
      wd_action(keep_alive(), rbinary, NULL);
  }
  
@@ -189,7 +150,7 @@ index bf60b19..54cfb5f 100644
  struct list *file = NULL, *target = NULL, *pidfile = NULL, *iface = NULL;
  char *tbinary, *rbinary, *admin;
  
-@@ -422,6 +435,58 @@ static void read_config(char *filename, char *progname)
+@@ -432,6 +445,58 @@
      }
  }
  
@@ -248,7 +209,7 @@ index bf60b19..54cfb5f 100644
  static void old_option(int c, char *filename)
  {
      fprintf(stderr, "Option -%c is no longer valid, please specify it in %s.\n", c, filename);
-@@ -509,6 +574,9 @@ int main(int argc, char *const argv[])
+@@ -519,6 +584,9 @@
      }
  
      read_config(filename, progname);
@@ -258,7 +219,7 @@ index bf60b19..54cfb5f 100644
  
      if (tint < 0)
  	usage();
-@@ -837,6 +905,12 @@ int main(int argc, char *const argv[])
+@@ -859,6 +927,12 @@
  	/* in user mode execute the given binary or just test fork() call */
  	do_check(check_bin(tbinary, timeout), rbinary, NULL);
  
@@ -271,6 +232,3 @@ index bf60b19..54cfb5f 100644
  	/* finally sleep some seconds */
  	sleep((tint >> 1) + (tint % 2)); /* this should make watchdog sleep tint seconds alltogther */
  	/* sleep(tint); */
--- 
-1.7.2.3
-

@@ -1,18 +1,7 @@
-From 052114556b7fda3241855bd211e09157b94d96c0 Mon Sep 17 00:00:00 2001
-From: Michael Meskes <meskes@debian.org>
-Date: Fri, 21 Jan 2011 12:24:30 +0100
-Subject: [PATCH 3/4] Add test-directory to configuration file
-
-Signed-off-by: Lon Hohberger <lon@users.sourceforge.net>
----
- src/watchdog.c |   24 ++++++++++++++++--------
- 1 files changed, 16 insertions(+), 8 deletions(-)
-
-diff --git a/src/watchdog.c b/src/watchdog.c
-index 24a24f6..24b921b 100644
---- a/src/watchdog.c
-+++ b/src/watchdog.c
-@@ -71,6 +71,11 @@ int verbose = FALSE;
+diff -ur watchdog-5.6.orig/src/watchdog.c watchdog-5.6/src/watchdog.c
+--- watchdog-5.6.orig/src/watchdog.c	2013-08-06 16:07:28.783256407 +0100
++++ watchdog-5.6/src/watchdog.c	2013-08-06 16:08:16.274256285 +0100
+@@ -75,6 +75,11 @@
  #define TESTTIMEOUT	"test-timeout"
  #define HEARTBEAT	"heartbeat-file"
  #define HBSTAMPS	"heartbeat-stamps"
@@ -24,7 +13,7 @@ index 24a24f6..24b921b 100644
  
  pid_t pid;
  int softboot = FALSE, watchdog = -1, load = -1, mem = -1, temp = -1;
-@@ -212,7 +217,6 @@ static void do_check(int res, char *rbinary, char *name)
+@@ -217,7 +222,6 @@
      wd_action(keep_alive(), rbinary, NULL, 0);
  }
  
@@ -32,7 +21,7 @@ index 24a24f6..24b921b 100644
  static void do_check2(int res, char *r_specific, char *r_global, char *name)
  {
      wd_action(res, r_specific, name, 1);
-@@ -221,7 +225,7 @@ static void do_check2(int res, char *r_specific, char *r_global, char *name)
+@@ -226,7 +230,7 @@
  
  /* Self-repairing binaries list */
  struct list *tr_bin = NULL;
@@ -41,7 +30,7 @@ index 24a24f6..24b921b 100644
  
  struct list *file = NULL, *target = NULL, *pidfile = NULL, *iface = NULL;
  char *tbinary, *rbinary, *admin;
-@@ -430,6 +434,11 @@ static void read_config(char *filename, char *progname)
+@@ -440,6 +444,11 @@
  		else {
  			minpages = atol(line + i);
  		}
@@ -53,7 +42,7 @@ index 24a24f6..24b921b 100644
  	    } else {
  		fprintf(stderr, "Ignoring invalid line in config file:\n%s\n", line);
  	    }
-@@ -442,7 +451,6 @@ static void read_config(char *filename, char *progname)
+@@ -452,7 +461,6 @@
      }
  }
  
@@ -61,7 +50,7 @@ index 24a24f6..24b921b 100644
  static void add_test_binaries(const char *path)
  {
      DIR *d;
-@@ -453,6 +461,8 @@ static void add_test_binaries(const char *path)
+@@ -463,6 +471,8 @@
      char fname[PATH_MAX];
      char *fdup;
  
@@ -70,7 +59,7 @@ index 24a24f6..24b921b 100644
      ret = stat(path, &sb);
      if (ret < 0)
  	return;
-@@ -492,7 +502,6 @@ static void add_test_binaries(const char *path)
+@@ -502,7 +512,6 @@
  	add_list(&tr_bin, fdup);
      } while (1);
  }
@@ -78,7 +67,7 @@ index 24a24f6..24b921b 100644
  
  static void old_option(int c, char *filename)
  {
-@@ -581,9 +590,7 @@ int main(int argc, char *const argv[])
+@@ -591,9 +600,7 @@
      }
  
      read_config(filename, progname);
@@ -89,16 +78,16 @@ index 24a24f6..24b921b 100644
  
      if (tint < 0)
  	usage();
-@@ -876,7 +883,7 @@ int main(int argc, char *const argv[])
+@@ -898,7 +905,7 @@
  
      /* main loop: update after <tint> seconds */
-     while (1) {
+     while (_running) {
 -	wd_action(keep_alive(), rbinary, NULL);
 +	wd_action(keep_alive(), rbinary, NULL, 0);
  
  	/* sync system if we have to */
  	do_check(sync_system(sync_it), rbinary, NULL);
-@@ -915,6 +922,7 @@ int main(int argc, char *const argv[])
+@@ -937,6 +944,7 @@
  #ifdef TESTBIN_PATH
  	/* test/repair binaries in the watchdog.d directory */
  	for (act = tr_bin; act != NULL; act = act->next)
@@ -106,6 +95,3 @@ index 24a24f6..24b921b 100644
  	    do_check2(check_bin(act->name, timeout, 1), act->name, rbinary, NULL);
  #endif
  
--- 
-1.7.2.3
-

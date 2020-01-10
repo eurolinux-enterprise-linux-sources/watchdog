@@ -48,8 +48,12 @@ struct list
 #define MAXICMPLEN      76
 #define MAXPACKET       (65536 - 60 - 8)        /* max packet size */
 
+#ifndef TRUE
 #define TRUE  1
+#endif
+#ifndef FALSE
 #define FALSE 0
+#endif
 
 #define TS_SIZE	12
 
@@ -66,4 +70,5 @@ int check_iface(struct list *);
 int check_memory(void);
 
 void do_shutdown(int errorcode);
-void terminate(int arg);
+void sigterm_handler(int arg);
+void terminate(void);

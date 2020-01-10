@@ -23,6 +23,9 @@
 #include <arpa/inet.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <linux/watchdog.h>
 #define __USE_GNU
 #include <string.h>
 
@@ -44,9 +47,12 @@ static int no_act = FALSE;
 int verbose = FALSE;
 #endif				/* USE_SYSLOG */
 
+volatile sig_atomic_t _running = 1;
+
 #define ADMIN		"admin"
 #define CHANGE		"change"
 #define DEVICE		"watchdog-device"
+#define DEVICE_TIMEOUT	"watchdog-timeout"
 #define	FILENAME	"file"
 #define INTERFACE	"interface"
 #define INTERVAL	"interval"
@@ -74,6 +80,7 @@ int tint = 10, logtick = 1, ticker = 1, schedprio = 1;
 int maxload1 = 0, maxload5 = 0, maxload15 = 0, minpages = 0;
 int maxtemp = 120, hbstamps = 300, lastts, nrts;
 int pingcount = 3;
+int devtimeout = TIMER_MARGIN;
 char *tempname = NULL, *devname = NULL, *admin = "root", *progname;
 char *timestamps, *heartbeat;
 time_t timeout = 0;
@@ -87,9 +94,9 @@ static void usage(void)
 {
     fprintf(stderr, "%s version %d.%d, usage:\n", progname, MAJOR_VERSION, MINOR_VERSION);
 #if USE_SYSLOG
-    fprintf(stderr, "%s [-i <interval> [-f]] [-l <max load avg>] [-v] [-s] [-b] [-m <max temperature>]\n", progname);
+    fprintf(stderr, "%s [-f] [-c <config_file>] [-v] [-s] [-b] [-q]\n", progname);
 #else				/* USE_SYSLOG */
-    fprintf(stderr, "%s [-i <interval> [-f]] [-l <max load avg>] [-v] [-b] [-m <max temperature>]\n", progname);
+    fprintf(stderr, "%s [-f] [-c <config_file>] [-s] [-b] [-q]\n", progname);
 #endif				/* USE_SYSLOG */
     exit(1);
 }
@@ -169,7 +176,7 @@ static int repair(char *rbinary, int result, char *name)
 #endif				/* USE_SYSLOG */
 
 	if (ret == ERESET) /* repair script says force hard reset, we give it a try */
-		sleep(TIMER_MARGIN * 4);
+		sleep(devtimeout * 4);
 	
 	/* for all other errors or if we still live, we let shutdown handle it */
 	return (ret);
@@ -368,6 +375,11 @@ static void read_config(char *filename, char *progname)
 			devname = NULL;
 		else
 			devname = strdup(line + i);
+	    } else if (strncmp(line + i, DEVICE_TIMEOUT, strlen(DEVICE_TIMEOUT)) == 0) {
+		if (spool(line, &i, strlen(DEVICE_TIMEOUT)))
+			fprintf(stderr, "Ignoring invalid line in config file: %s ", line);
+		else
+			devtimeout = atol(line + i);
 	    } else if (strncmp(line + i, TEMP, strlen(TEMP)) == 0) {
 		if (spool(line, &i, strlen(TEMP)))
 			tempname = NULL;
@@ -511,7 +523,7 @@ int main(int argc, char *const argv[])
     if (tint < 0)
 	usage();
 
-    if (tint >= TIMER_MARGIN && !force) {
+    if (tint >= devtimeout && !force) {
 	fprintf(stderr, "%s error:\n", progname);
 	fprintf(stderr, "This interval length might reboot the system while the process sleeps!\n");
 	fprintf(stderr, "To force this interval length use the -f option.\n");
@@ -619,7 +631,7 @@ int main(int argc, char *const argv[])
     /* Log the starting message */
     openlog(progname, LOG_PID, LOG_DAEMON);
     syslog(LOG_INFO, "starting daemon (%d.%d):", MAJOR_VERSION, MINOR_VERSION);
-    syslog(LOG_INFO, "int=%ds realtime=%s sync=%s soft=%s mla=%d mem=%ld",
+    syslog(LOG_INFO, "int=%ds realtime=%s sync=%s soft=%s mla=%d mem=%d",
 	    tint,
 	    realtime ? "yes" : "no",
 	    sync_it ? "yes" : "no",
@@ -650,7 +662,7 @@ int main(int argc, char *const argv[])
             for (act = iface; act != NULL; act = act->next)
                 syslog(LOG_INFO, "interface: %s", act->name);                
 
-    syslog(LOG_INFO, "test=%s(%d) repair=%s alive=%s heartbeat=%s temp=%s to=%s no_act=%s",
+    syslog(LOG_INFO, "test=%s(%ld) repair=%s alive=%s heartbeat=%s temp=%s to=%s no_act=%s",
 	    (tbinary == NULL) ? "none" : tbinary, timeout, 
 	    (rbinary == NULL) ? "none" : rbinary,
 	    (devname == NULL) ? "none" : devname,
@@ -673,6 +685,17 @@ int main(int argc, char *const argv[])
 	    /* do not exit here per default */
 	    /* we can use watchdog even if there is no watchdog device */
 	}
+	if (watchdog >= 0 && devtimeout > 0) {
+	    /* Set the watchdog hard-stop timeout; default = unset (use
+	       driver default) */
+	    if (ioctl(watchdog, WDIOC_SETTIMEOUT, &devtimeout) < 0) {
+#if USE_SYSLOG
+            	syslog(LOG_ERR, "cannot set timeout %s (errno = %d = '%m')", strerror(errno), devtimeout, errno);
+#else				
+            	perror(progname);
+#endif			   
+	    }
+	}
     }
 
     /* MJ 16/2/2000, need to keep track of the watchdog writes so that
@@ -692,7 +715,7 @@ int main(int argc, char *const argv[])
             /* Allocate  memory for keeping the timestamps in */
             nrts = 0;
             lastts = 0;
-            timestamps = (unsigned char *) calloc(hbstamps, TS_SIZE);
+            timestamps = (char *) calloc(hbstamps, TS_SIZE);
             if ( timestamps == NULL ) {
 #if USE_SYSLOG
                 syslog(LOG_ERR, "cannot allocate memory for timestamps (errno = %d = '%m')", errno);
@@ -707,7 +730,8 @@ int main(int argc, char *const argv[])
                     memcpy(timestamps + (TS_SIZE * lastts), rbuf, TS_SIZE);
                     if (nrts < hbstamps) 
                         nrts++;
-                    lastts = ++lastts % hbstamps;
+                    ++lastts;
+                    lastts = lastts % hbstamps;
                 }
                 /* Write an indication that the watchdog has started to the heartbeat file */
                 /* copy it to the buffer */
@@ -717,7 +741,8 @@ int main(int argc, char *const argv[])
                 // success
                 if (nrts < hbstamps) 
                     nrts++;
-                lastts = ++lastts % hbstamps;
+                ++lastts;
+                lastts = lastts % hbstamps;
 
             }
         }
@@ -760,14 +785,15 @@ int main(int argc, char *const argv[])
     }
 
     /* tuck my process id away */
+    pid = getpid();
     fp = fopen(PIDFILE, "w");
     if (fp != NULL) {
-	fprintf(fp, "%d\n", pid = getpid());
+	fprintf(fp, "%d\n", pid);
 	(void) fclose(fp);
     }
-    /* set signal term to call terminate() */
-    /* to make sure watchdog device is closed */
-    signal(SIGTERM, terminate);
+    /* set signal term to set our run flag to 0 so that */
+    /* we make sure watchdog device is closed when receiving SIGTERM */
+    signal(SIGTERM, sigterm_handler);
 
 #if defined(_POSIX_MEMLOCK)
     if (realtime == TRUE) {
@@ -796,7 +822,7 @@ int main(int argc, char *const argv[])
 #endif
 
     /* main loop: update after <tint> seconds */
-    while (1) {
+    while (_running) {
 	wd_action(keep_alive(), rbinary, NULL);
 
 	/* sync system if we have to */
@@ -846,4 +872,7 @@ int main(int argc, char *const argv[])
 	}
 #endif				/* USE_SYSLOG */
     }
+
+    terminate();
+    /* not reached */
 }

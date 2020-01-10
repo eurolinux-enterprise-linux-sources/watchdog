@@ -1,26 +1,20 @@
 Summary:          Software and/or Hardware watchdog daemon
 Name:             watchdog
-Version:          5.6
+Version:          5.5
 Release:          2%{?dist}
 License:          GPL+
 Group:            System Environment/Daemons
 
 URL:              http://sourceforge.net/projects/watchdog/
-Source0:          http://downloads.sourceforge.net/watchdog/watchdog-%{version}.tar.gz
+Source0:          http://dl.sf.net/watchdog/watchdog-%{version}.tar.gz
 Source1:          watchdog.init
 Source2:          README.watchdog.ipmi
 Source3:          README.Fedora
 
-Patch1:           bz657750-1-add-watchdog-d.patch
-Patch2:           bz657750-2-script-handling.patch
-Patch3:           bz657750-3-add_test_directory_to_configuration_file.patch
-Patch4:           bz657750-4-Log-binary-names.patch
-Patch5:           bz657750-5-man_page_information_for_test_directory.patch
+Patch0:           %{name}-%{version}-cleanup.patch
+Patch1:           %{name}-%{version}-cleanup-nfs.patch
 
 BuildRoot:        %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
-
-BuildRequires:    automake
-BuildRequires:    autoconf >= 2.63
 
 Requires(post):   /sbin/chkconfig
 Requires(postun): /sbin/chkconfig
@@ -50,24 +44,15 @@ expiration) initiated by the BMC.
 
 cp %{SOURCE2} .
 cp %{SOURCE3} .
-%if 0%{?rhel}
-mv README.Fedora README.RHEL
-%endif
 
-%patch1 -p1 -b .bz657750-1-add-watchdog-d
-%patch2 -p1 -b .bz657750-2-script-handling
-%patch3 -p1 -b .bz657750-3-add_test_directory_to_configuration_file
-%patch4 -p1 -b .bz657750-4-Log-binary-names
-%patch5 -p1 -b .bz657750-5-man_page_information_for_test_directory
+%patch0 -p1 -b .cleanup
+%patch1 -p1 -b .cleanup-nfs
 
 mv README README.orig
 iconv -f ISO-8859-1 -t UTF-8 < README.orig > README
 
 
 %build
-# Because we touch configure.in, the shipped configure script
-# no longer works and we have to regenerate it.
-autoreconf
 %configure 
 make %{?_smp_mflags}
 
@@ -75,7 +60,6 @@ make %{?_smp_mflags}
 %install
 rm -Rf ${RPM_BUILD_ROOT}
 install -d -m0755 ${RPM_BUILD_ROOT}%{_sysconfdir}
-install -d -m0755 ${RPM_BUILD_ROOT}%{_sysconfdir}/watchdog.d
 make DESTDIR=${RPM_BUILD_ROOT} install
 install -Dp -m0644 %{name}.sysconfig ${RPM_BUILD_ROOT}%{_sysconfdir}/sysconfig/watchdog
 install -Dp -m0755 %{SOURCE1} ${RPM_BUILD_ROOT}%{_initrddir}/watchdog
@@ -105,16 +89,10 @@ fi
 
 %files
 %defattr(-, root, root, -)
-%doc AUTHORS ChangeLog COPYING examples/ IAFA-PACKAGE NEWS README TODO README.watchdog.ipmi
-%if 0%{?rhel}
-%doc README.RHEL
-%else
-%doc README.Fedora
-%endif
+%doc AUTHORS ChangeLog COPYING examples/ IAFA-PACKAGE NEWS README TODO README.watchdog.ipmi README.Fedora
 %config(noreplace) %{_sysconfdir}/watchdog.conf
 %config(noreplace) %{_sysconfdir}/sysconfig/watchdog
 %{_sysconfdir}/rc.d/init.d/watchdog
-%{_sysconfdir}/watchdog.d
 %{_sbindir}/watchdog
 %{_sbindir}/wd_keepalive
 %{_mandir}/man5/watchdog.conf.5*
@@ -123,49 +101,6 @@ fi
 
 
 %changelog
-* Thu Aug  8 2013 Richard W.M. Jones <rjones@redhat.com> - 5.6-2
-- Rename README.Fedora to README.RHEL on RHEL.
-
-* Tue Aug  6 2013 Richard W.M. Jones <rjones@redhat.com> - 5.6-1
-- Rebase to 5.6 (the same version as RHEL 5)
-  Resolves: rhbz#870217
-
-* Thu Feb  3 2011 Richard W.M. Jones <rjones@redhat.com> - 5.5-10
-- Import watchdog initscript from Rawhide, includes some LSB-compliance
-  fixes.
-  Resolves: rhbz#584701
-
-* Tue Jan 25 2011 Lon Hohberger <lhh@redhat.com> - 5.5-9
-- Add man page information on test-directory
-  (bz657750-5-man_page_information_for_test_directory.patch)
-  Resolves: rhbz#657750
-
-* Mon Jan 24 2011 Lon Hohberger <lhh@redhat.com> - 5.5-8
-- Add watchdog.d handling
-  (bz657750-1-add-watchdog-d.patch)
-  This makes the scripts in /etc/watchdog.d behave slightly differently
-  (bz657750-2-script-handling.patch)
-  Add test-directory to configuration file
-  (bz657750-3-add_test_directory_to_configuration_file.patch)
-  Log which binaries fail
-  (bz657750-4-Log-binary-names.patch)
-  Resolves: rhbz#657750
-
-* Fri Jan 29 2010 Richard W.M. Jones <rjones@redhat.com> - 5.5-7.1
-- Import Fedora Rawhide package (includes fixed Source0 URL).
-
-* Wed Jan 13 2010 Richard W.M. Jones <rjones@redhat.com> - 5.5-7
-- Fix Source0 URL.
-
-* Mon Jul 27 2009 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 5.5-6
-- Rebuilt for https://fedoraproject.org/wiki/Fedora_12_Mass_Rebuild
-
-* Fri Mar 13 2009 Richard W.M. Jones <rjones@redhat.com> - 5.5-5
-- Updated the cleanup patch and sent upstream.
-
-* Fri Mar 13 2009 Richard W.M. Jones <rjones@redhat.com> - 5.5-3
-- Remove dubious "cleanup-nfs" patch.
-
 * Thu Mar  5 2009 Richard W.M. Jones <rjones@redhat.com> - 5.5-2
 - Use '-' in defattr line instead of explicit file mode.
 
