@@ -6,7 +6,6 @@ Conflicts=watchdog.service
 [Service]
 Type=forking
 ExecStart=/usr/sbin/watchdog
-ControlGroup=cpu:/
 
 [Install]
 WantedBy=multi-user.target
