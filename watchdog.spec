@@ -1,8 +1,7 @@
-%define _hardened_build 1
 Summary:          Software and/or Hardware watchdog daemon
 Name:             watchdog
 Version:          5.13
-Release:          12%{?dist}
+Release:          9%{?dist}
 License:          GPLv2+
 
 URL:              http://sourceforge.net/projects/watchdog/
@@ -136,17 +135,6 @@ fi
 
 
 %changelog
-* Tue Jun 19 2018 Josef Ridky <jridky@redhat.com> - 5.13-12
-- Resolves: #1092523 - add PIE and RELRO check 
-- Resolves: #1133135 - add ipmi.service dependency to watchdog.service file
-- Resolves: #1259816 - remove deprecated stanza in unit files
-
-* Fri Jan 24 2014 Daniel Mach <dmach@redhat.com> - 5.13-11
-- Mass rebuild 2014-01-24
-
-* Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 5.13-10
-- Mass rebuild 2013-12-27
-
 * Thu Nov  7 2013 Ales Ledvinka <aledvink@redhat.com> - 5.13-9
 - SELinux: Add /usr/libexec/watchdog/scripts/ for test-bin and repair-bin to inherit from.
 - systemd: service with network available dependency
